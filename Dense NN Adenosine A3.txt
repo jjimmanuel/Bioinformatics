@@ -1,0 +1,42 @@
+dataset = pd.read_excel('bindingdb_adenosine receptor A3.xlsx', sheet_name='Human_Ki')
+ligand_smiles = dataset['Ligand SMILES']
+ki = dataset['Activity']
+
+df = pd.concat([ligand_smiles, ki], axis=1)
+smiles = df['Ligand SMILES']
+ki = df['Activity']
+
+fingerprint = []
+for i in smiles:
+    chem = Chem.MolFromSmiles(str(i))
+    fpgen = AllChem.GetMorganGenerator(radius=1, fpSize=2048)
+    fps = fpgen.GetFingerprint(chem)
+    fps = list(fps)
+    fingerprint.append(fps)
+
+fingerprint = np.asarray(fingerprint)
+
+
+x_train, x_test, y_train, y_test = train_test_split(fingerprint, ki, test_size=0.2)
+
+input = tf.keras.Input(shape=(2048, ))
+layer1 = tf.keras.layers.Dense(64, activation='relu', kernel_initializer=tf.keras.initializers.HeNormal(), kernel_regularizer='l2')(input)
+layer2 = tf.keras.layers.Dense(256, activation='relu', kernel_initializer=tf.keras.initializers.HeNormal(), kernel_regularizer='l2')(layer1)
+layer3 = tf.keras.layers.Dense(256, activation='relu', kernel_initializer=tf.keras.initializers.HeNormal(), kernel_regularizer='l2')(layer2)
+layer4 = tf.keras.layers.Dense(128, activation='relu', kernel_initializer=tf.keras.initializers.HeNormal(), kernel_regularizer='l2')(layer3)
+layer5 = tf.keras.layers.Dense(64, activation='relu', kernel_initializer=tf.keras.initializers.HeNormal(), kernel_regularizer='l2')(layer4)
+output = tf.keras.layers.Dense(3, activation='softmax')(layer5)
+model = tf.keras.Model(inputs=input, outputs=output)
+
+earlystopping = EarlyStopping(monitor='val_loss', patience=3, restore_best_weights=True)
+
+model.compile(loss=tf.keras.losses.SparseCategoricalCrossentropy(from_logits=True), optimizer=tf.keras.optimizers.Adam(learning_rate=0.00001), metrics=['accuracy'])
+print(model.summary())
+
+model.fit(x_train, y_train, validation_split=0.25, epochs=10000, callbacks=[earlystopping], batch_size=2)
+y_pred = model.predict(x_test)
+
+
+test_scores = model.evaluate(x_test, y_test, verbose=2)
+print("Test loss:", test_scores[0])
+print("Test accuracy:", test_scores[1])
